@@ -1,4 +1,4 @@
-# go-config
+# jp-go-config
 
 Enterprise-standard configuration management for Go applications, wrapping Viper with typed configuration, automatic .env file loading, and comprehensive validation.
 
@@ -14,7 +14,7 @@ Enterprise-standard configuration management for Go applications, wrapping Viper
 ## Installation
 
 ```bash
-go get github.com/JohnPlummer/go-config
+go get github.com/JohnPlummer/jp-go-config
 ```
 
 ## Quick Start
@@ -24,7 +24,7 @@ package main
 
 import (
     "log"
-    "github.com/JohnPlummer/go-config"
+    "github.com/JohnPlummer/jp-go-config"
 )
 
 func main() {
@@ -236,7 +236,7 @@ dbConfig := config.Database
 ### After
 
 ```go
-// github.com/JohnPlummer/go-config
+// github.com/JohnPlummer/jp-go-config
 std, err := config.NewStandard(config.WithConfigFile("config.yaml"))
 dbConfig := config.DatabaseConfigFromViper(std)
 ```

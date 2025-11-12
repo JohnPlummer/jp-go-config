@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/JohnPlummer/go-config"
+	config "github.com/JohnPlummer/jp-go-config"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

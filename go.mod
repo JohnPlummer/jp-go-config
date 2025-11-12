@@ -1,4 +1,4 @@
-module github.com/JohnPlummer/go-config
+module github.com/JohnPlummer/jp-go-config
 
 go 1.23.0
 

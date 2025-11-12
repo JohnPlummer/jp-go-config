@@ -5,7 +5,7 @@ import (
 	"log"
 	"os"
 
-	"github.com/JohnPlummer/go-config"
+	"github.com/JohnPlummer/jp-go-config"
 )
 
 func main() {
