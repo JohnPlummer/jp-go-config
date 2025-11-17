@@ -49,7 +49,7 @@ func ResilienceConfigFromViper(s *Standard) ResilienceConfig {
 		InitialDelay:     s.viper.GetDuration("resilience.initial_delay"),
 		MaxDelay:         s.viper.GetDuration("resilience.max_delay"),
 		Multiplier:       s.viper.GetFloat64("resilience.multiplier"),
-		MaxRequests:      uint32(s.GetInt("resilience.max_requests")),
+		MaxRequests:      s.viper.GetUint32("resilience.max_requests"),
 		Interval:         s.viper.GetDuration("resilience.interval"),
 		Timeout:          s.viper.GetDuration("resilience.timeout"),
 		FailureThreshold: s.viper.GetFloat64("resilience.failure_threshold"),
