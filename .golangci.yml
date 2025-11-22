@@ -1,4 +1,4 @@
-# golangci-lint configuration for go-config
+# golangci-lint configuration for go-config (v2 format)
 # Based on Some Things To Do monorepo standards
 
 version: "2"
@@ -7,13 +7,8 @@ run:
   # Timeout for analysis - prevents CI hangs while allowing thorough checking
   timeout: 5m
 
-formatters:
-  enable:
-    - gofmt
-    - gofumpt       # Stricter formatting than gofmt
-    - goimports
-
 linters:
+  default: none
   enable:
     - govet
     - staticcheck
@@ -22,33 +17,33 @@ linters:
     - unconvert
     - gosec
 
-  disable:
-    - exhaustive    # Reports exhaustive switch statements - too strict for this codebase
-    - exhaustruct   # Reports uninitialized struct fields - conflicts with optional fields
-    - wrapcheck     # Reports unwrapped errors - not applicable to current error handling strategy
-    - unparam       # Reports unused parameters - creates noise for interface implementations and test helpers
-
   settings:
     staticcheck:
       checks: ["all"]
 
     gosec:
-      # Exclude specific rules that are problematic
+      # Exclude specific rules that are problematic in test contexts
       excludes:
-        - G306  # File permissions - files create with standard 0o644 permissions
+        - G104  # Unhandled errors - common in test files for os.Setenv/Unsetenv
+        - G306  # File permissions - test files create temporary files with standard 0o644 permissions
 
   exclusions:
-    # Skip generated files
     paths:
       - ".*\\.pb\\.go$"
       - ".*_gen\\.go$"
       - ".*_generated\\.go$"
-    # Exclude certain linters from test files to avoid false positives on test-specific patterns
-    rules:
-      - path: _test\.go
-        linters:
-          - gosec
-          - errcheck
+
+formatters:
+  enable:
+    - gofmt
+    - gofumpt       # Stricter formatting than gofmt
+    - goimports
+
+  exclusions:
+    paths:
+      - ".*\\.pb\\.go$"
+      - ".*_gen\\.go$"
+      - ".*_generated\\.go$"
 
 issues:
   # Maximum issues count per one linter
@@ -56,7 +51,3 @@ issues:
 
   # Maximum count of issues with the same text
   max-same-issues: 10
-
-  # Show only new issues for PRs
-  new: false
-# Trigger CI rebuild
