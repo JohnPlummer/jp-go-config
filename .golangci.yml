@@ -59,3 +59,4 @@ issues:
 
   # Show only new issues for PRs
   new: false
+# Trigger CI rebuild
