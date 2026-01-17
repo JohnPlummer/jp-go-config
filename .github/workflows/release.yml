@@ -22,7 +22,7 @@ jobs:
       - name: Set up Go
         uses: actions/setup-go@v6
         with:
-          go-version: "1.23"
+          go-version: "1.24"
           cache: true
 
       - name: Run tests
@@ -40,4 +40,4 @@ jobs:
       - name: Trigger Go Proxy
         run: |
           VERSION=${GITHUB_REF#refs/tags/}
-          curl "https://proxy.golang.org/github.com/JohnPlummer/go-config/@v/${VERSION}.info" || true
+          curl "https://proxy.golang.org/github.com/JohnPlummer/jp-go-config/@v/${VERSION}.info" || true
