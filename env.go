@@ -163,7 +163,7 @@ func LoadEnvFiles(env string, searchPaths ...string) error {
 // loadEnvFileWithoutOverride loads a .env file without overriding existing env vars.
 // This is the standard behavior for base .env files.
 func loadEnvFileWithoutOverride(path string) error {
-	content, err := os.ReadFile(path)
+	content, err := os.ReadFile(path) //nolint:gosec // G304: path is from trusted config, not user input
 	if err != nil {
 		return err
 	}
@@ -200,7 +200,7 @@ func loadEnvFileWithoutOverride(path string) error {
 // loadEnvFileWithOverride loads a .env file and overrides existing env vars.
 // This is used for environment-specific files that should take precedence.
 func loadEnvFileWithOverride(path string) error {
-	content, err := os.ReadFile(path)
+	content, err := os.ReadFile(path) //nolint:gosec // G304: path is from trusted config, not user input
 	if err != nil {
 		return err
 	}

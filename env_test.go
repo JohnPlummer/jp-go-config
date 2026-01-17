@@ -19,7 +19,7 @@ func TestFindProjectRoot(t *testing.T) {
 	sub1Dir := filepath.Join(projectDir, "sub1")
 	sub2Dir := filepath.Join(sub1Dir, "sub2")
 
-	if err := os.MkdirAll(sub2Dir, 0o755); err != nil {
+	if err := os.MkdirAll(sub2Dir, 0o750); err != nil {
 		t.Fatal(err)
 	}
 
@@ -281,7 +281,7 @@ func TestLoadEnvFiles(t *testing.T) {
 
 		// Create a directory without any .env files
 		emptyDir := filepath.Join(tmpDir, "empty")
-		if err := os.MkdirAll(emptyDir, 0o755); err != nil {
+		if err := os.MkdirAll(emptyDir, 0o750); err != nil {
 			t.Fatal(err)
 		}
 
