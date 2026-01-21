@@ -133,6 +133,71 @@ func TestLoad_WithConfigPath_NotFound(t *testing.T) {
 	}
 }
 
+func TestLoad_WithBothEnvAndConfigPaths(t *testing.T) {
+	// Create temp directory
+	tmpDir := t.TempDir()
+
+	// Create .env file
+	envContent := `COMBINED_TEST_HOST=envhost
+COMBINED_TEST_PASSWORD=envpass
+`
+	envPath := filepath.Join(tmpDir, ".env")
+	if err := os.WriteFile(envPath, []byte(envContent), 0o644); err != nil {
+		t.Fatalf("failed to write .env file: %v", err)
+	}
+
+	// Create config.yaml file
+	configContent := `server:
+  host: confighost
+  port: 6666
+`
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(configContent), 0o644); err != nil {
+		t.Fatalf("failed to write config.yaml file: %v", err)
+	}
+
+	// Save and restore env vars
+	origHost := os.Getenv("COMBINED_TEST_HOST")
+	origPassword := os.Getenv("COMBINED_TEST_PASSWORD")
+	t.Cleanup(func() {
+		if origHost != "" {
+			os.Setenv("COMBINED_TEST_HOST", origHost)
+		} else {
+			os.Unsetenv("COMBINED_TEST_HOST")
+		}
+		if origPassword != "" {
+			os.Setenv("COMBINED_TEST_PASSWORD", origPassword)
+		} else {
+			os.Unsetenv("COMBINED_TEST_PASSWORD")
+		}
+	})
+	os.Unsetenv("COMBINED_TEST_HOST")
+	os.Unsetenv("COMBINED_TEST_PASSWORD")
+
+	// Load with both options combined
+	cfg, err := Load(WithEnvPath(envPath), WithConfigPath(configPath))
+	if err != nil {
+		t.Fatalf("Load() error = %v, want nil", err)
+	}
+
+	// Verify env vars were loaded from .env
+	if got := os.Getenv("COMBINED_TEST_HOST"); got != "envhost" {
+		t.Errorf("COMBINED_TEST_HOST = %q, want %q", got, "envhost")
+	}
+
+	// Verify config values were loaded from config.yaml
+	srv, err := cfg.Server()
+	if err != nil {
+		t.Fatalf("Server() error = %v", err)
+	}
+	if srv.Host != "confighost" {
+		t.Errorf("Server().Host = %q, want %q", srv.Host, "confighost")
+	}
+	if srv.Port != 6666 {
+		t.Errorf("Server().Port = %d, want %d", srv.Port, 6666)
+	}
+}
+
 func TestLoad_WithPrefix(t *testing.T) {
 	// Set env var with custom prefix
 	os.Setenv("MYAPP_SERVER_HOST", "prefixhost")
