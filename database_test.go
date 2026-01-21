@@ -156,7 +156,9 @@ func TestDatabaseConfigFromViper(t *testing.T) {
 		assert.Equal(t, 10, cfg.MinConns)
 	})
 
-	t.Run("supports alternative env var names", func(t *testing.T) {
+	t.Run("aliases no longer work (breaking change v0.4.0)", func(t *testing.T) {
+		// Per ADR-003, aliases have been removed in v0.4.0
+		// DB_DATABASE, DB_USERNAME, DB_PASS should NOT set the config fields
 		os.Setenv("DB_DATABASE", "altdb")
 		os.Setenv("DB_USERNAME", "altuser")
 		os.Setenv("DB_PASS", "altpass")
@@ -171,9 +173,10 @@ func TestDatabaseConfigFromViper(t *testing.T) {
 
 		cfg := config.DatabaseConfigFromViper(std)
 
-		assert.Equal(t, "altdb", cfg.Database)
-		assert.Equal(t, "altuser", cfg.User)
-		assert.Equal(t, "altpass", cfg.Password)
+		// Aliases should NOT work - values should be defaults, not the alias values
+		assert.Equal(t, "postgres", cfg.Database, "DB_DATABASE alias should not work")
+		assert.Equal(t, "postgres", cfg.User, "DB_USERNAME alias should not work")
+		assert.Equal(t, "", cfg.Password, "DB_PASS alias should not work")
 	})
 
 	t.Run("DB_URL takes precedence over individual vars", func(t *testing.T) {

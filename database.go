@@ -110,9 +110,9 @@ func ParseDatabaseURL(rawURL string) (*DatabaseConfig, error) {
 //   - DB_URL -> full connection URL (takes precedence over individual vars)
 //   - DB_HOST -> host (default: localhost)
 //   - DB_PORT -> port (default: 5432)
-//   - DB_NAME or DB_DATABASE -> database (default: postgres)
-//   - DB_USER or DB_USERNAME -> user (default: postgres)
-//   - DB_PASSWORD or DB_PASS -> password
+//   - DB_NAME -> database (default: postgres)
+//   - DB_USER -> user (default: postgres)
+//   - DB_PASSWORD -> password
 //   - DB_SSLMODE -> ssl_mode (default: disable)
 //   - DB_MAX_CONNS -> max_conns (default: 25)
 //   - DB_MIN_CONNS -> min_conns (default: 5)
@@ -151,9 +151,9 @@ func DatabaseConfigFromViper(s *Standard) DatabaseConfig {
 	if cfg.Host == "" {
 		_ = s.BindEnv("database.host", "DB_HOST")
 		_ = s.BindEnv("database.port", "DB_PORT")
-		_ = s.BindEnv("database.database", "DB_NAME", "DB_DATABASE")
-		_ = s.BindEnv("database.user", "DB_USER", "DB_USERNAME")
-		_ = s.BindEnv("database.password", "DB_PASSWORD", "DB_PASS")
+		_ = s.BindEnv("database.database", "DB_NAME")
+		_ = s.BindEnv("database.user", "DB_USER")
+		_ = s.BindEnv("database.password", "DB_PASSWORD")
 		_ = s.BindEnv("database.ssl_mode", "DB_SSLMODE")
 
 		cfg.Host = s.GetString("database.host")
