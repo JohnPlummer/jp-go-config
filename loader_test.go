@@ -260,3 +260,165 @@ func TestConfig_OpenAI_Success(t *testing.T) {
 		t.Errorf("OpenAI().APIKey = %q, want %q", oai.APIKey, "test-api-key")
 	}
 }
+
+func TestDiscovery_EnvFileInCwd(t *testing.T) {
+	// Save original directory
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	t.Cleanup(func() {
+		os.Chdir(origDir)
+	})
+
+	// Create temp directory with .env file
+	tmpDir := t.TempDir()
+	envContent := `DISCOVERY_TEST_VAR=from_cwd
+`
+	envPath := filepath.Join(tmpDir, ".env")
+	if err := os.WriteFile(envPath, []byte(envContent), 0o644); err != nil {
+		t.Fatalf("failed to write .env file: %v", err)
+	}
+
+	// Save and restore env var
+	origVal := os.Getenv("DISCOVERY_TEST_VAR")
+	t.Cleanup(func() {
+		if origVal != "" {
+			os.Setenv("DISCOVERY_TEST_VAR", origVal)
+		} else {
+			os.Unsetenv("DISCOVERY_TEST_VAR")
+		}
+	})
+	os.Unsetenv("DISCOVERY_TEST_VAR")
+
+	// Change to temp directory
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	// Load should auto-discover .env in cwd
+	_, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// Verify env var was loaded
+	if got := os.Getenv("DISCOVERY_TEST_VAR"); got != "from_cwd" {
+		t.Errorf("DISCOVERY_TEST_VAR = %q, want %q", got, "from_cwd")
+	}
+}
+
+func TestDiscovery_ConfigYamlInCwd(t *testing.T) {
+	// Save original directory
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	t.Cleanup(func() {
+		os.Chdir(origDir)
+	})
+
+	// Create temp directory with config.yaml file
+	tmpDir := t.TempDir()
+	configContent := `server:
+  host: discovered_host
+  port: 7777
+`
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(configContent), 0o644); err != nil {
+		t.Fatalf("failed to write config.yaml file: %v", err)
+	}
+
+	// Change to temp directory
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	// Load should auto-discover config.yaml in cwd
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// Verify config was loaded
+	srv, err := cfg.Server()
+	if err != nil {
+		t.Fatalf("Server() error = %v", err)
+	}
+	if srv.Host != "discovered_host" {
+		t.Errorf("Server().Host = %q, want %q", srv.Host, "discovered_host")
+	}
+	if srv.Port != 7777 {
+		t.Errorf("Server().Port = %d, want %d", srv.Port, 7777)
+	}
+}
+
+func TestDiscovery_MissingFilesDoNotCauseErrors(t *testing.T) {
+	// Save original directory
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	t.Cleanup(func() {
+		os.Chdir(origDir)
+	})
+
+	// Create empty temp directory (no .env or config.yaml)
+	tmpDir := t.TempDir()
+
+	// Change to temp directory
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	// Load should succeed even without any config files
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v, want nil (missing files should not cause error)", err)
+	}
+	if cfg == nil {
+		t.Fatal("Load() returned nil Config")
+	}
+}
+
+func TestDiscovery_EnvFileDoesNotOverrideExisting(t *testing.T) {
+	// Save original directory
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	t.Cleanup(func() {
+		os.Chdir(origDir)
+	})
+
+	// Create temp directory with .env file
+	tmpDir := t.TempDir()
+	envContent := `NO_OVERRIDE_TEST=from_file
+`
+	envPath := filepath.Join(tmpDir, ".env")
+	if err := os.WriteFile(envPath, []byte(envContent), 0o644); err != nil {
+		t.Fatalf("failed to write .env file: %v", err)
+	}
+
+	// Set env var before Load (should not be overridden)
+	os.Setenv("NO_OVERRIDE_TEST", "from_env")
+	t.Cleanup(func() {
+		os.Unsetenv("NO_OVERRIDE_TEST")
+	})
+
+	// Change to temp directory
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	// Load should auto-discover .env but not override existing var
+	_, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// Verify env var was NOT overridden
+	if got := os.Getenv("NO_OVERRIDE_TEST"); got != "from_env" {
+		t.Errorf("NO_OVERRIDE_TEST = %q, want %q (should not be overridden)", got, "from_env")
+	}
+}

@@ -7,7 +7,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/joho/godotenv"
 	"github.com/spf13/viper"
 )
 
@@ -99,10 +98,10 @@ func Load(opts ...LoadOption) (*Config, error) {
 		return nil, fmt.Errorf("env file discovery failed: %w", err)
 	}
 	if envPath != "" {
-		if err := godotenv.Load(envPath); err != nil {
+		if err := loadEnvFileWithoutOverride(envPath); err != nil {
 			return nil, fmt.Errorf("failed to load .env file %s: %w", envPath, err)
 		}
-		options.logger.Debug("loaded env file", "path", envPath)
+		options.logger.Info("loaded env file", "path", envPath)
 	}
 
 	// Create Standard config with Viper
@@ -121,7 +120,7 @@ func Load(opts ...LoadOption) (*Config, error) {
 		if err := v.ReadInConfig(); err != nil {
 			return nil, fmt.Errorf("failed to read config file %s: %w", configPath, err)
 		}
-		options.logger.Debug("loaded config file", "path", configPath)
+		options.logger.Info("loaded config file", "path", configPath)
 	}
 
 	standard := &Standard{viper: v}
