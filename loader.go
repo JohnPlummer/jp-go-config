@@ -282,3 +282,32 @@ func (c *Config) OpenAI() (*OpenAIConfig, error) {
 func (c *Config) Standard() *Standard {
 	return c.standard
 }
+
+// ValidateAll validates all configuration types and returns the first error.
+// Validation order: database, server, openai, resilience.
+// Use this method for fail-fast behavior when all configs are required.
+//
+// Example:
+//
+//	cfg, err := config.Load()
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+//	if err := cfg.ValidateAll(); err != nil {
+//	    log.Fatal(err)
+//	}
+func (c *Config) ValidateAll() error {
+	if _, err := c.Database(); err != nil {
+		return err
+	}
+	if _, err := c.Server(); err != nil {
+		return err
+	}
+	if _, err := c.OpenAI(); err != nil {
+		return err
+	}
+	if _, err := c.Resilience(); err != nil {
+		return err
+	}
+	return nil
+}

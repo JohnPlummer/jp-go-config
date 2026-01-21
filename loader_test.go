@@ -326,6 +326,87 @@ func TestConfig_OpenAI_Success(t *testing.T) {
 	}
 }
 
+func TestValidateAll_Success(t *testing.T) {
+	// Set all required config values
+	os.Setenv("DB_PASSWORD", "testpassword")
+	os.Setenv("OPENAI_API_KEY", "test-api-key")
+	defer func() {
+		os.Unsetenv("DB_PASSWORD")
+		os.Unsetenv("OPENAI_API_KEY")
+	}()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	err = cfg.ValidateAll()
+	if err != nil {
+		t.Errorf("ValidateAll() error = %v, want nil", err)
+	}
+}
+
+func TestValidateAll_DatabaseError(t *testing.T) {
+	// Set OpenAI key but not DB password
+	os.Setenv("OPENAI_API_KEY", "test-api-key")
+	os.Unsetenv("DB_PASSWORD")
+	defer os.Unsetenv("OPENAI_API_KEY")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	err = cfg.ValidateAll()
+	if err == nil {
+		t.Fatal("ValidateAll() error = nil, want database validation error")
+	}
+}
+
+func TestValidateAll_OpenAIError(t *testing.T) {
+	// Set DB password but not OpenAI key
+	os.Setenv("DB_PASSWORD", "testpassword")
+	os.Unsetenv("OPENAI_API_KEY")
+	defer os.Unsetenv("DB_PASSWORD")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	err = cfg.ValidateAll()
+	if err == nil {
+		t.Fatal("ValidateAll() error = nil, want openai validation error")
+	}
+}
+
+func TestValidateAll_CachesConfigs(t *testing.T) {
+	// Set all required config values
+	os.Setenv("DB_PASSWORD", "testpassword")
+	os.Setenv("OPENAI_API_KEY", "test-api-key")
+	defer func() {
+		os.Unsetenv("DB_PASSWORD")
+		os.Unsetenv("OPENAI_API_KEY")
+	}()
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	err = cfg.ValidateAll()
+	if err != nil {
+		t.Fatalf("ValidateAll() error = %v", err)
+	}
+
+	// Subsequent accessor calls should return cached configs
+	db1, _ := cfg.Database()
+	db2, _ := cfg.Database()
+	if db1 != db2 {
+		t.Error("Database() did not return cached instance after ValidateAll()")
+	}
+}
+
 func TestDiscovery_EnvFileInCwd(t *testing.T) {
 	// Save original directory
 	origDir, err := os.Getwd()
