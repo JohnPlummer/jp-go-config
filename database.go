@@ -79,7 +79,7 @@ func ParseDatabaseURL(rawURL string) (*DatabaseConfig, error) {
 	} else {
 		port, err := strconv.Atoi(portStr)
 		if err != nil {
-			return nil, fmt.Errorf("invalid port in database URL: %s", portStr)
+			return nil, fmt.Errorf("invalid port %q in database URL: %w", portStr, err)
 		}
 		cfg.Port = port
 	}
@@ -138,16 +138,19 @@ func DatabaseConfigFromViper(s *Standard) DatabaseConfig {
 
 	var cfg DatabaseConfig
 
-	// Check for DB_URL first - it takes precedence over individual connection vars
+	// Check for DB_URL first - it takes precedence over individual connection vars.
+	// If DB_URL is set but invalid, we fall back to individual env vars.
+	// Any configuration errors will be caught by Validate().
 	if dbURL := os.Getenv("DB_URL"); dbURL != "" {
 		parsed, err := ParseDatabaseURL(dbURL)
 		if err == nil {
 			cfg = *parsed
 		}
-		// If parsing fails, fall through to individual env vars
+		// Note: If parsing fails, we fall back to individual env vars below.
+		// This graceful degradation allows partially configured systems to work.
 	}
 
-	// If DB_URL was not set or failed to parse, use individual env vars
+	// Use individual env vars if DB_URL was not set or failed to parse
 	if cfg.Host == "" {
 		_ = s.BindEnv("database.host", "DB_HOST")
 		_ = s.BindEnv("database.port", "DB_PORT")
