@@ -10,6 +10,96 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestParseDatabaseURL(t *testing.T) {
+	t.Run("parses valid postgres:// URL", func(t *testing.T) {
+		cfg, err := config.ParseDatabaseURL("postgres://testuser:testpass@dbhost:5433/testdb?sslmode=require")
+		require.NoError(t, err)
+
+		assert.Equal(t, "dbhost", cfg.Host)
+		assert.Equal(t, 5433, cfg.Port)
+		assert.Equal(t, "testdb", cfg.Database)
+		assert.Equal(t, "testuser", cfg.User)
+		assert.Equal(t, "testpass", cfg.Password)
+		assert.Equal(t, "require", cfg.SSLMode)
+	})
+
+	t.Run("parses valid postgresql:// URL", func(t *testing.T) {
+		cfg, err := config.ParseDatabaseURL("postgresql://pguser:pgpass@pghost:5434/pgdb?sslmode=verify-full")
+		require.NoError(t, err)
+
+		assert.Equal(t, "pghost", cfg.Host)
+		assert.Equal(t, 5434, cfg.Port)
+		assert.Equal(t, "pgdb", cfg.Database)
+		assert.Equal(t, "pguser", cfg.User)
+		assert.Equal(t, "pgpass", cfg.Password)
+		assert.Equal(t, "verify-full", cfg.SSLMode)
+	})
+
+	t.Run("handles URL without port (defaults to 5432)", func(t *testing.T) {
+		cfg, err := config.ParseDatabaseURL("postgres://user:pass@localhost/mydb")
+		require.NoError(t, err)
+
+		assert.Equal(t, "localhost", cfg.Host)
+		assert.Equal(t, 5432, cfg.Port)
+		assert.Equal(t, "mydb", cfg.Database)
+	})
+
+	t.Run("handles URL without sslmode (defaults to disable)", func(t *testing.T) {
+		cfg, err := config.ParseDatabaseURL("postgres://user:pass@localhost:5432/mydb")
+		require.NoError(t, err)
+
+		assert.Equal(t, "disable", cfg.SSLMode)
+	})
+
+	t.Run("handles URL with empty host (defaults to localhost)", func(t *testing.T) {
+		cfg, err := config.ParseDatabaseURL("postgres://user:pass@/mydb")
+		require.NoError(t, err)
+
+		assert.Equal(t, "localhost", cfg.Host)
+	})
+
+	t.Run("handles URL without password", func(t *testing.T) {
+		cfg, err := config.ParseDatabaseURL("postgres://user@localhost:5432/mydb")
+		require.NoError(t, err)
+
+		assert.Equal(t, "user", cfg.User)
+		assert.Equal(t, "", cfg.Password)
+	})
+
+	t.Run("handles URL with special characters in password", func(t *testing.T) {
+		cfg, err := config.ParseDatabaseURL("postgres://user:p%40ss%2Fword@localhost:5432/mydb")
+		require.NoError(t, err)
+
+		assert.Equal(t, "user", cfg.User)
+		assert.Equal(t, "p@ss/word", cfg.Password)
+	})
+
+	t.Run("returns error for invalid URL", func(t *testing.T) {
+		_, err := config.ParseDatabaseURL("://invalid")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid database URL")
+	})
+
+	t.Run("returns error for unsupported scheme (mysql)", func(t *testing.T) {
+		_, err := config.ParseDatabaseURL("mysql://user:pass@localhost:3306/mydb")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported database URL scheme")
+		assert.Contains(t, err.Error(), "mysql")
+	})
+
+	t.Run("returns error for unsupported scheme (http)", func(t *testing.T) {
+		_, err := config.ParseDatabaseURL("http://localhost/mydb")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "unsupported database URL scheme")
+	})
+
+	t.Run("returns error for invalid port", func(t *testing.T) {
+		_, err := config.ParseDatabaseURL("postgres://user:pass@localhost:notaport/mydb")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "invalid port")
+	})
+}
+
 func TestDatabaseConfigFromViper(t *testing.T) {
 	t.Run("uses defaults when no config provided", func(t *testing.T) {
 		std, err := config.NewStandard()
@@ -84,6 +174,97 @@ func TestDatabaseConfigFromViper(t *testing.T) {
 		assert.Equal(t, "altdb", cfg.Database)
 		assert.Equal(t, "altuser", cfg.User)
 		assert.Equal(t, "altpass", cfg.Password)
+	})
+
+	t.Run("DB_URL takes precedence over individual vars", func(t *testing.T) {
+		// Set both DB_URL and individual vars - DB_URL should win
+		os.Setenv("DB_URL", "postgres://urluser:urlpass@urlhost:5555/urldb?sslmode=require")
+		os.Setenv("DB_HOST", "ignored-host")
+		os.Setenv("DB_PORT", "9999")
+		os.Setenv("DB_NAME", "ignored-db")
+		os.Setenv("DB_USER", "ignored-user")
+		os.Setenv("DB_PASSWORD", "ignored-pass")
+		os.Setenv("DB_SSLMODE", "disable")
+		defer func() {
+			os.Unsetenv("DB_URL")
+			os.Unsetenv("DB_HOST")
+			os.Unsetenv("DB_PORT")
+			os.Unsetenv("DB_NAME")
+			os.Unsetenv("DB_USER")
+			os.Unsetenv("DB_PASSWORD")
+			os.Unsetenv("DB_SSLMODE")
+		}()
+
+		std, err := config.NewStandard()
+		require.NoError(t, err)
+
+		cfg := config.DatabaseConfigFromViper(std)
+
+		// Values from DB_URL should be used
+		assert.Equal(t, "urlhost", cfg.Host)
+		assert.Equal(t, 5555, cfg.Port)
+		assert.Equal(t, "urldb", cfg.Database)
+		assert.Equal(t, "urluser", cfg.User)
+		assert.Equal(t, "urlpass", cfg.Password)
+		assert.Equal(t, "require", cfg.SSLMode)
+	})
+
+	t.Run("pool settings work when DB_URL is set", func(t *testing.T) {
+		os.Setenv("DB_URL", "postgres://user:pass@host:5432/db")
+		os.Setenv("DB_MAX_CONNS", "100")
+		os.Setenv("DB_MIN_CONNS", "20")
+		os.Setenv("DB_RETRY_ATTEMPTS", "5")
+		defer func() {
+			os.Unsetenv("DB_URL")
+			os.Unsetenv("DB_MAX_CONNS")
+			os.Unsetenv("DB_MIN_CONNS")
+			os.Unsetenv("DB_RETRY_ATTEMPTS")
+		}()
+
+		std, err := config.NewStandard()
+		require.NoError(t, err)
+
+		cfg := config.DatabaseConfigFromViper(std)
+
+		// Connection settings from URL
+		assert.Equal(t, "host", cfg.Host)
+		assert.Equal(t, 5432, cfg.Port)
+		assert.Equal(t, "db", cfg.Database)
+		assert.Equal(t, "user", cfg.User)
+		assert.Equal(t, "pass", cfg.Password)
+
+		// Pool settings from individual env vars
+		assert.Equal(t, 100, cfg.MaxConns)
+		assert.Equal(t, 20, cfg.MinConns)
+		assert.Equal(t, 5, cfg.RetryAttempts)
+	})
+
+	t.Run("falls back to individual vars when DB_URL is empty", func(t *testing.T) {
+		os.Setenv("DB_URL", "")
+		os.Setenv("DB_HOST", "fallback-host")
+		os.Setenv("DB_PORT", "5433")
+		os.Setenv("DB_NAME", "fallback-db")
+		os.Setenv("DB_USER", "fallback-user")
+		os.Setenv("DB_PASSWORD", "fallback-pass")
+		defer func() {
+			os.Unsetenv("DB_URL")
+			os.Unsetenv("DB_HOST")
+			os.Unsetenv("DB_PORT")
+			os.Unsetenv("DB_NAME")
+			os.Unsetenv("DB_USER")
+			os.Unsetenv("DB_PASSWORD")
+		}()
+
+		std, err := config.NewStandard()
+		require.NoError(t, err)
+
+		cfg := config.DatabaseConfigFromViper(std)
+
+		assert.Equal(t, "fallback-host", cfg.Host)
+		assert.Equal(t, 5433, cfg.Port)
+		assert.Equal(t, "fallback-db", cfg.Database)
+		assert.Equal(t, "fallback-user", cfg.User)
+		assert.Equal(t, "fallback-pass", cfg.Password)
 	})
 }
 
