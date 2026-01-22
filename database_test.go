@@ -179,9 +179,9 @@ func TestDatabaseConfigFromViper(t *testing.T) {
 		assert.Equal(t, "", cfg.Password, "DB_PASS alias should not work")
 	})
 
-	t.Run("DB_URL takes precedence over individual vars", func(t *testing.T) {
-		// Set both DB_URL and individual vars - DB_URL should win
-		os.Setenv("DB_URL", "postgres://urluser:urlpass@urlhost:5555/urldb?sslmode=require")
+	t.Run("DATABASE_URL takes precedence over individual vars", func(t *testing.T) {
+		// Set both DATABASE_URL and individual vars - DATABASE_URL should win
+		os.Setenv("DATABASE_URL", "postgres://urluser:urlpass@urlhost:5555/urldb?sslmode=require")
 		os.Setenv("DB_HOST", "ignored-host")
 		os.Setenv("DB_PORT", "9999")
 		os.Setenv("DB_NAME", "ignored-db")
@@ -189,7 +189,7 @@ func TestDatabaseConfigFromViper(t *testing.T) {
 		os.Setenv("DB_PASSWORD", "ignored-pass")
 		os.Setenv("DB_SSLMODE", "disable")
 		defer func() {
-			os.Unsetenv("DB_URL")
+			os.Unsetenv("DATABASE_URL")
 			os.Unsetenv("DB_HOST")
 			os.Unsetenv("DB_PORT")
 			os.Unsetenv("DB_NAME")
@@ -203,7 +203,7 @@ func TestDatabaseConfigFromViper(t *testing.T) {
 
 		cfg := config.DatabaseConfigFromViper(std)
 
-		// Values from DB_URL should be used
+		// Values from DATABASE_URL should be used
 		assert.Equal(t, "urlhost", cfg.Host)
 		assert.Equal(t, 5555, cfg.Port)
 		assert.Equal(t, "urldb", cfg.Database)
@@ -212,13 +212,13 @@ func TestDatabaseConfigFromViper(t *testing.T) {
 		assert.Equal(t, "require", cfg.SSLMode)
 	})
 
-	t.Run("pool settings work when DB_URL is set", func(t *testing.T) {
-		os.Setenv("DB_URL", "postgres://user:pass@host:5432/db")
+	t.Run("pool settings work when DATABASE_URL is set", func(t *testing.T) {
+		os.Setenv("DATABASE_URL", "postgres://user:pass@host:5432/db")
 		os.Setenv("DB_MAX_CONNS", "100")
 		os.Setenv("DB_MIN_CONNS", "20")
 		os.Setenv("DB_RETRY_ATTEMPTS", "5")
 		defer func() {
-			os.Unsetenv("DB_URL")
+			os.Unsetenv("DATABASE_URL")
 			os.Unsetenv("DB_MAX_CONNS")
 			os.Unsetenv("DB_MIN_CONNS")
 			os.Unsetenv("DB_RETRY_ATTEMPTS")
@@ -242,15 +242,15 @@ func TestDatabaseConfigFromViper(t *testing.T) {
 		assert.Equal(t, 5, cfg.RetryAttempts)
 	})
 
-	t.Run("falls back to individual vars when DB_URL is empty", func(t *testing.T) {
-		os.Setenv("DB_URL", "")
+	t.Run("falls back to individual vars when DATABASE_URL is empty", func(t *testing.T) {
+		os.Setenv("DATABASE_URL", "")
 		os.Setenv("DB_HOST", "fallback-host")
 		os.Setenv("DB_PORT", "5433")
 		os.Setenv("DB_NAME", "fallback-db")
 		os.Setenv("DB_USER", "fallback-user")
 		os.Setenv("DB_PASSWORD", "fallback-pass")
 		defer func() {
-			os.Unsetenv("DB_URL")
+			os.Unsetenv("DATABASE_URL")
 			os.Unsetenv("DB_HOST")
 			os.Unsetenv("DB_PORT")
 			os.Unsetenv("DB_NAME")
