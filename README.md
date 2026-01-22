@@ -1,15 +1,6 @@
 # jp-go-config
 
-Enterprise-standard configuration management for Go applications, wrapping Viper with typed configuration, automatic .env file loading, and comprehensive validation.
-
-## Features
-
-- **Viper wrapper** with sensible defaults
-- **Automatic .env file loading** with environment variable precedence
-- **Typed configuration structs** for database, server, and OpenAI
-- **Functional options pattern** for flexible initialization
-- **Comprehensive validation** with helpful error messages
-- **Zero configuration required** - works with defaults out of the box
+Configuration management for Go applications with auto-discovery, typed configuration structs, and comprehensive validation.
 
 ## Installation
 
@@ -28,74 +19,59 @@ import (
 )
 
 func main() {
-    // Create standard config loader (loads .env files automatically)
-    std, err := config.NewStandard()
+    // Load configuration with auto-discovery
+    cfg, err := config.Load()
     if err != nil {
         log.Fatal(err)
     }
 
-    // Load typed database configuration
-    dbConfig := config.DatabaseConfigFromViper(std)
-
-    // Validate configuration
-    if err := dbConfig.Validate(); err != nil {
+    // Get validated database configuration
+    db, err := cfg.Database()
+    if err != nil {
         log.Fatal(err)
     }
 
-    // Use the configuration
-    log.Printf("Connecting to %s", dbConfig.ConnectionString())
+    log.Printf("Connecting to %s", db.ConnectionString())
 }
 ```
 
-## Configuration Loading
+## Configuration Precedence
 
-The Standard loader follows this precedence (highest to lowest):
+Configuration values are resolved in this order (highest to lowest priority):
 
-1. Environment variables with configured prefix (default: `APP_`)
-2. .env file values
-3. Config file values (if provided)
+1. Environment variables
+2. `.env` file values
+3. `config.yaml` file values
 4. Default values
 
-### Creating a Standard Config Loader
+Environment variables always win. The `.env` file does not override existing environment variables.
 
-```go
-// With defaults (loads .env, uses APP_ prefix)
-std, err := config.NewStandard()
+## Auto-Discovery
 
-// With custom prefix
-std, err := config.NewStandard(
-    config.WithEnvPrefix("MYAPP"),
-)
+`Load()` automatically discovers and loads configuration files from:
 
-// With config file
-std, err := config.NewStandard(
-    config.WithConfigFile("config.yaml"),
-)
+1. Current working directory
+2. Project root (directory containing `go.mod` or `.git`)
 
-// With config name and search paths
-std, err := config.NewStandard(
-    config.WithConfigName("config"),
-    config.WithConfigType("yaml"),
-    config.WithConfigPaths(".", "/etc/myapp"),
-)
+Files discovered:
 
-// With custom .env file
-std, err := config.NewStandard(
-    config.WithEnvFile("/path/to/custom.env"),
-)
-```
+- `.env` - Environment variables (loaded first, does not override existing env vars)
+- `config.yaml` or `config.yml` - Configuration values
 
-## Database Configuration
+No configuration files are required. Missing files are silently skipped.
 
-### Environment Variables
+## Environment Variables
+
+### Database Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
+| `DB_URL` | (none) | PostgreSQL connection URL (takes precedence over individual vars) |
 | `DB_HOST` | `localhost` | Database host |
 | `DB_PORT` | `5432` | Database port |
-| `DB_NAME` or `DB_DATABASE` | `postgres` | Database name |
-| `DB_USER` or `DB_USERNAME` | `postgres` | Database user |
-| `DB_PASSWORD` or `DB_PASS` | (none) | Database password (required) |
+| `DB_NAME` | `postgres` | Database name |
+| `DB_USER` | `postgres` | Database user |
+| `DB_PASSWORD` | (none) | Database password (required) |
 | `DB_SSLMODE` | `disable` | SSL mode (disable, require, verify-ca, verify-full) |
 | `DB_MAX_CONNS` | `25` | Maximum connections in pool |
 | `DB_MIN_CONNS` | `5` | Minimum connections in pool |
@@ -105,24 +81,7 @@ std, err := config.NewStandard(
 | `DB_RETRY_DELAY` | `2s` | Delay between retries |
 | `DB_HEALTH_CHECK_PERIOD` | `30s` | Health check interval |
 
-### Usage
-
-```go
-std, _ := config.NewStandard()
-dbConfig := config.DatabaseConfigFromViper(std)
-
-if err := dbConfig.Validate(); err != nil {
-    log.Fatal(err)
-}
-
-// Get connection string
-connStr := dbConfig.ConnectionString()
-// postgres://user:pass@localhost:5432/mydb?sslmode=disable
-```
-
-## Server Configuration
-
-### Environment Variables
+### Server Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -132,23 +91,7 @@ connStr := dbConfig.ConnectionString()
 | `SERVER_WRITE_TIMEOUT` | `15s` | Write timeout |
 | `SERVER_IDLE_TIMEOUT` | `60s` | Idle timeout |
 
-### Usage
-
-```go
-std, _ := config.NewStandard()
-serverConfig := config.ServerConfigFromViper(std)
-
-if err := serverConfig.Validate(); err != nil {
-    log.Fatal(err)
-}
-
-// Get address for net/http
-addr := serverConfig.Address() // "localhost:8080"
-```
-
-## OpenAI Configuration
-
-### Environment Variables
+### OpenAI Configuration
 
 | Variable | Default | Description |
 |----------|---------|-------------|
@@ -158,113 +101,115 @@ addr := serverConfig.Address() // "localhost:8080"
 | `OPENAI_MAX_TOKENS` | `2000` | Maximum tokens in response |
 | `OPENAI_TIMEOUT` | `30s` | Request timeout |
 
-### Usage
+### Resilience Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `RESILIENCE_MAX_RETRIES` | `3` | Maximum retry attempts |
+| `RESILIENCE_INITIAL_DELAY` | `1s` | Initial retry delay |
+| `RESILIENCE_MAX_DELAY` | `30s` | Maximum retry delay |
+| `RESILIENCE_MULTIPLIER` | `2.0` | Backoff multiplier |
+| `RESILIENCE_MAX_REQUESTS` | `10` | Circuit breaker max requests |
+| `RESILIENCE_INTERVAL` | `10s` | Circuit breaker interval |
+| `RESILIENCE_TIMEOUT` | `60s` | Circuit breaker timeout |
+| `RESILIENCE_FAILURE_THRESHOLD` | `0.6` | Failure threshold (0.0 - 1.0) |
+
+## DB_URL Support
+
+Use a PostgreSQL connection URL instead of individual environment variables:
+
+```bash
+DB_URL=postgres://user:password@localhost:5432/mydb?sslmode=require
+```
+
+When `DB_URL` is set, it takes precedence over `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, and `DB_SSLMODE`.
+
+Pool settings (`DB_MAX_CONNS`, etc.) are always read from individual environment variables and applied regardless of whether `DB_URL` is used.
+
+Supported URL schemes: `postgres://` and `postgresql://`
+
+## Explicit Paths
+
+Override auto-discovery with explicit file paths:
 
 ```go
-std, _ := config.NewStandard()
-openaiConfig := config.OpenAIConfigFromViper(std)
+cfg, err := config.Load(
+    config.WithEnvPath("/path/to/.env"),
+    config.WithConfigPath("/path/to/config.yaml"),
+)
+```
 
-if err := openaiConfig.Validate(); err != nil {
+When explicit paths are provided:
+
+- The file must exist (returns error if not found)
+- Auto-discovery is disabled for that file type
+
+## Load Options
+
+| Option | Description |
+|--------|-------------|
+| `WithEnvPath(path)` | Explicit `.env` file path |
+| `WithConfigPath(path)` | Explicit config file path |
+| `WithPrefix(prefix)` | Environment variable prefix (default: `APP`) |
+| `WithLogger(logger)` | Custom `slog.Logger` for discovery events |
+
+## Accessing Configuration
+
+The `Config` struct provides typed accessor methods that validate and cache on first access:
+
+```go
+cfg, err := config.Load()
+if err != nil {
     log.Fatal(err)
 }
 
-client := openai.NewClient(openaiConfig.APIKey)
+// Each accessor validates and caches the config
+db, err := cfg.Database()
+server, err := cfg.Server()
+openai, err := cfg.OpenAI()
+resilience, err := cfg.Resilience()
 ```
 
-## Validation
+## Fail-Fast Validation
 
-All configuration structs provide a `Validate()` method that checks:
-
-- Required fields are present
-- Values are within acceptable ranges
-- Cross-field constraints are satisfied
+Use `ValidateAll()` to validate all configuration types at startup:
 
 ```go
-dbConfig := config.DatabaseConfigFromViper(std)
-
-if err := dbConfig.Validate(); err != nil {
-    // Error messages are clear and actionable:
-    // "database.port must be between 1 and 65535, got 99999"
-    // "database.password is required"
+cfg, err := config.Load()
+if err != nil {
     log.Fatal(err)
 }
-```
 
-### Validation Helpers
-
-The package provides validation helper functions you can use for custom configurations:
-
-```go
-// Validate required string field
-if err := config.ValidateRequired("field.name", value); err != nil {
-    return err
+if err := cfg.ValidateAll(); err != nil {
+    log.Fatal(err)
 }
 
-// Validate port number (1-65535)
-if err := config.ValidatePort("server.port", port); err != nil {
-    return err
-}
-
-// Validate positive duration
-if err := config.ValidateDuration("timeout", duration); err != nil {
-    return err
-}
-
-// Validate positive integer
-if err := config.ValidatePositive("count", count); err != nil {
-    return err
-}
-
-// Validate value in range
-if err := config.ValidateRange("temperature", temp, 0.0, 2.0); err != nil {
-    return err
-}
+// All configs are now validated and cached
+db, _ := cfg.Database()
+server, _ := cfg.Server()
 ```
 
-## Migration from Monorepo
+Validation order: database, server, openai, resilience.
 
-If migrating from the Some Things To Do monorepo:
+## Advanced Usage
 
-### Before
-
-```go
-// pipeline/pkg/config
-config, err := config.LoadConfig("config.yaml")
-dbConfig := config.Database
-```
-
-### After
+For lower-level access or custom configurations, use `NewStandard()` directly:
 
 ```go
-// github.com/JohnPlummer/jp-go-config
-std, err := config.NewStandard(config.WithConfigFile("config.yaml"))
-dbConfig := config.DatabaseConfigFromViper(std)
-```
-
-The database configuration struct is compatible - you may only need to update import paths.
-
-## Usage Patterns
-
-### Environment-Only Configuration
-
-For containerized deployments without config files:
-
-```go
-// Just loads from environment variables and .env files
-std, err := config.NewStandard()
-dbConfig := config.DatabaseConfigFromViper(std)
-```
-
-### Config File + Environment Overrides
-
-For local development with environment-specific overrides:
-
-```go
+// Create standard Viper wrapper
 std, err := config.NewStandard(
+    config.WithEnvPrefix("MYAPP"),
     config.WithConfigFile("config.yaml"),
 )
-// Environment variables override config file values
+if err != nil {
+    log.Fatal(err)
+}
+
+// Load typed configuration manually
 dbConfig := config.DatabaseConfigFromViper(std)
+if err := dbConfig.Validate(); err != nil {
+    log.Fatal(err)
+}
 ```
 
 ### Custom Configuration Structs
@@ -285,12 +230,46 @@ if err := std.Unmarshal(&myConfig); err != nil {
 }
 ```
 
-## Examples
+### Access Underlying Standard
 
-See the [examples](./examples) directory for complete, runnable examples:
+```go
+cfg, _ := config.Load()
+std := cfg.Standard()
 
-- [Basic usage](./examples/basic/main.go) - Loading and using typed configurations
-- [Validation](./examples/validation/main.go) - Error handling and validation examples
+// Use Standard methods
+value := std.GetString("custom.key")
+```
+
+## Validation Helpers
+
+Use these functions for custom configuration validation:
+
+```go
+// Required string field
+if err := config.ValidateRequired("field.name", value); err != nil {
+    return err
+}
+
+// Port number (1-65535)
+if err := config.ValidatePort("server.port", port); err != nil {
+    return err
+}
+
+// Positive duration
+if err := config.ValidateDuration("timeout", duration); err != nil {
+    return err
+}
+
+// Positive integer
+if err := config.ValidatePositive("count", count); err != nil {
+    return err
+}
+
+// Value in range
+if err := config.ValidateRange("temperature", temp, 0.0, 2.0); err != nil {
+    return err
+}
+```
 
 ## Development
 
@@ -301,15 +280,8 @@ See the [examples](./examples) directory for complete, runnable examples:
 ### Testing
 
 ```bash
-# Run all tests
 go test -v ./...
-
-# Run tests with coverage
 go test -v -race -cover ./...
-
-# View coverage report
-go test -coverprofile=coverage.out ./...
-go tool cover -html=coverage.out
 ```
 
 ### Linting
@@ -321,12 +293,3 @@ golangci-lint run
 ## License
 
 MIT License - see [LICENSE](LICENSE) for details.
-
-## Contributing
-
-This package is extracted from the Some Things To Do monorepo and follows enterprise Go standards:
-
-- Comprehensive test coverage (>80%)
-- Clear, actionable error messages
-- Backward-compatible API changes
-- Documentation for all exported types and functions

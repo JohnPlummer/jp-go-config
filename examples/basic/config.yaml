@@ -1,0 +1,15 @@
+# Example configuration file
+# Environment variables override these values
+
+database:
+  host: localhost
+  port: 5432
+  database: mydb
+  user: postgres
+  ssl_mode: disable
+
+server:
+  host: localhost
+  port: 8080
+  read_timeout: 15s
+  write_timeout: 15s

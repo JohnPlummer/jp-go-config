@@ -1,12 +1,12 @@
-module github.com/JohnPlummer/go-config/examples/validation
+module github.com/JohnPlummer/jp-go-config/examples/validation
 
-go 1.23.0
+go 1.24.0
 
 toolchain go1.24.5
 
-replace github.com/JohnPlummer/go-config => ../..
+replace github.com/JohnPlummer/jp-go-config => ../..
 
-require github.com/JohnPlummer/go-config v0.0.0-00010101000000-000000000000
+require github.com/JohnPlummer/jp-go-config v0.0.0-00010101000000-000000000000
 
 require (
 	github.com/fsnotify/fsnotify v1.9.0 // indirect
