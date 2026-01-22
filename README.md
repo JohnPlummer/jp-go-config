@@ -66,7 +66,7 @@ No configuration files are required. Missing files are silently skipped.
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `DB_URL` | (none) | PostgreSQL connection URL (takes precedence over individual vars) |
+| `DATABASE_URL` | (none) | PostgreSQL connection URL (takes precedence over individual vars) |
 | `DB_HOST` | `localhost` | Database host |
 | `DB_PORT` | `5432` | Database port |
 | `DB_NAME` | `postgres` | Database name |
@@ -114,17 +114,17 @@ No configuration files are required. Missing files are silently skipped.
 | `RESILIENCE_TIMEOUT` | `60s` | Circuit breaker timeout |
 | `RESILIENCE_FAILURE_THRESHOLD` | `0.6` | Failure threshold (0.0 - 1.0) |
 
-## DB_URL Support
+## DATABASE_URL Support
 
 Use a PostgreSQL connection URL instead of individual environment variables:
 
 ```bash
-DB_URL=postgres://user:password@localhost:5432/mydb?sslmode=require
+DATABASE_URL=postgres://user:password@localhost:5432/mydb?sslmode=require
 ```
 
-When `DB_URL` is set, it takes precedence over `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, and `DB_SSLMODE`.
+When `DATABASE_URL` is set, it takes precedence over `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASSWORD`, and `DB_SSLMODE`.
 
-Pool settings (`DB_MAX_CONNS`, etc.) are always read from individual environment variables and applied regardless of whether `DB_URL` is used.
+Pool settings (`DB_MAX_CONNS`, etc.) are always read from individual environment variables and applied regardless of whether `DATABASE_URL` is used.
 
 Supported URL schemes: `postgres://` and `postgresql://`
 

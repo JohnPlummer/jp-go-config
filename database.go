@@ -107,7 +107,7 @@ func ParseDatabaseURL(rawURL string) (*DatabaseConfig, error) {
 // DatabaseConfigFromViper creates a DatabaseConfig from a Standard config loader.
 //
 // Environment variable mappings:
-//   - DB_URL -> full connection URL (takes precedence over individual vars)
+//   - DATABASE_URL -> full connection URL (takes precedence over individual vars)
 //   - DB_HOST -> host (default: localhost)
 //   - DB_PORT -> port (default: 5432)
 //   - DB_NAME -> database (default: postgres)
@@ -122,12 +122,12 @@ func ParseDatabaseURL(rawURL string) (*DatabaseConfig, error) {
 //   - DB_RETRY_DELAY -> retry_delay (default: 2s)
 //   - DB_HEALTH_CHECK_PERIOD -> health_check_period (default: 30s)
 //
-// When DB_URL is set, it takes precedence over individual connection variables
+// When DATABASE_URL is set, it takes precedence over individual connection variables
 // (DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_SSLMODE).
 // Pool settings (DB_MAX_CONNS, etc.) are always read from individual env vars
-// and applied regardless of whether DB_URL is used.
+// and applied regardless of whether DATABASE_URL is used.
 func DatabaseConfigFromViper(s *Standard) DatabaseConfig {
-	// Bind pool and retry environment variables (always used regardless of DB_URL)
+	// Bind pool and retry environment variables (always used regardless of DATABASE_URL)
 	_ = s.BindEnv("database.max_conns", "DB_MAX_CONNS")
 	_ = s.BindEnv("database.min_conns", "DB_MIN_CONNS")
 	_ = s.BindEnv("database.conn_max_lifetime", "DB_CONN_MAX_LIFETIME")
@@ -138,10 +138,10 @@ func DatabaseConfigFromViper(s *Standard) DatabaseConfig {
 
 	var cfg DatabaseConfig
 
-	// Check for DB_URL first - it takes precedence over individual connection vars.
-	// If DB_URL is set but invalid, we fall back to individual env vars.
+	// Check for DATABASE_URL first - it takes precedence over individual connection vars.
+	// If DATABASE_URL is set but invalid, we fall back to individual env vars.
 	// Any configuration errors will be caught by Validate().
-	if dbURL := os.Getenv("DB_URL"); dbURL != "" {
+	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
 		parsed, err := ParseDatabaseURL(dbURL)
 		if err == nil {
 			cfg = *parsed
@@ -150,7 +150,7 @@ func DatabaseConfigFromViper(s *Standard) DatabaseConfig {
 		// This graceful degradation allows partially configured systems to work.
 	}
 
-	// Use individual env vars if DB_URL was not set or failed to parse
+	// Use individual env vars if DATABASE_URL was not set or failed to parse
 	if cfg.Host == "" {
 		_ = s.BindEnv("database.host", "DB_HOST")
 		_ = s.BindEnv("database.port", "DB_PORT")
