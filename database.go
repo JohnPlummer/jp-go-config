@@ -2,6 +2,9 @@ package config
 
 import (
 	"fmt"
+	"net/url"
+	"os"
+	"strconv"
 	"time"
 )
 
@@ -28,14 +31,88 @@ type DatabaseConfig struct {
 	HealthCheckPeriod time.Duration `mapstructure:"health_check_period"`
 }
 
+// ParseDatabaseURL parses a PostgreSQL connection URL into a DatabaseConfig.
+//
+// Supported URL schemes: postgres://, postgresql://
+//
+// URL format: postgres://user:password@host:port/database?sslmode=value
+//
+// The function extracts:
+//   - host: from URL host
+//   - port: from URL port (default: 5432)
+//   - database: from URL path (without leading slash)
+//   - user: from URL userinfo
+//   - password: from URL userinfo
+//   - sslmode: from query parameter (default: disable)
+//
+// Returns an error for invalid URLs or unsupported schemes.
+//
+// Example:
+//
+//	cfg, err := config.ParseDatabaseURL("postgres://user:pass@localhost:5432/mydb?sslmode=require")
+//	if err != nil {
+//	    log.Fatal(err)
+//	}
+func ParseDatabaseURL(rawURL string) (*DatabaseConfig, error) {
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid database URL: %w", err)
+	}
+
+	// Validate scheme
+	if parsed.Scheme != "postgres" && parsed.Scheme != "postgresql" {
+		return nil, fmt.Errorf("unsupported database URL scheme: %s (expected postgres:// or postgresql://)", parsed.Scheme)
+	}
+
+	cfg := &DatabaseConfig{}
+
+	// Extract host
+	cfg.Host = parsed.Hostname()
+	if cfg.Host == "" {
+		cfg.Host = "localhost"
+	}
+
+	// Extract port (default 5432)
+	portStr := parsed.Port()
+	if portStr == "" {
+		cfg.Port = 5432
+	} else {
+		port, err := strconv.Atoi(portStr)
+		if err != nil {
+			return nil, fmt.Errorf("invalid port %q in database URL: %w", portStr, err)
+		}
+		cfg.Port = port
+	}
+
+	// Extract database from path (remove leading slash)
+	if parsed.Path != "" && parsed.Path != "/" {
+		cfg.Database = parsed.Path[1:] // Remove leading slash
+	}
+
+	// Extract user and password
+	if parsed.User != nil {
+		cfg.User = parsed.User.Username()
+		cfg.Password, _ = parsed.User.Password()
+	}
+
+	// Extract sslmode from query params
+	cfg.SSLMode = parsed.Query().Get("sslmode")
+	if cfg.SSLMode == "" {
+		cfg.SSLMode = "disable"
+	}
+
+	return cfg, nil
+}
+
 // DatabaseConfigFromViper creates a DatabaseConfig from a Standard config loader.
 //
 // Environment variable mappings:
+//   - DB_URL -> full connection URL (takes precedence over individual vars)
 //   - DB_HOST -> host (default: localhost)
 //   - DB_PORT -> port (default: 5432)
-//   - DB_NAME or DB_DATABASE -> database (default: postgres)
-//   - DB_USER or DB_USERNAME -> user (default: postgres)
-//   - DB_PASSWORD or DB_PASS -> password
+//   - DB_NAME -> database (default: postgres)
+//   - DB_USER -> user (default: postgres)
+//   - DB_PASSWORD -> password
 //   - DB_SSLMODE -> ssl_mode (default: disable)
 //   - DB_MAX_CONNS -> max_conns (default: 25)
 //   - DB_MIN_CONNS -> min_conns (default: 5)
@@ -44,14 +121,13 @@ type DatabaseConfig struct {
 //   - DB_RETRY_ATTEMPTS -> retry_attempts (default: 3)
 //   - DB_RETRY_DELAY -> retry_delay (default: 2s)
 //   - DB_HEALTH_CHECK_PERIOD -> health_check_period (default: 30s)
+//
+// When DB_URL is set, it takes precedence over individual connection variables
+// (DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD, DB_SSLMODE).
+// Pool settings (DB_MAX_CONNS, etc.) are always read from individual env vars
+// and applied regardless of whether DB_URL is used.
 func DatabaseConfigFromViper(s *Standard) DatabaseConfig {
-	// Bind environment variables
-	_ = s.BindEnv("database.host", "DB_HOST")
-	_ = s.BindEnv("database.port", "DB_PORT")
-	_ = s.BindEnv("database.database", "DB_NAME", "DB_DATABASE")
-	_ = s.BindEnv("database.user", "DB_USER", "DB_USERNAME")
-	_ = s.BindEnv("database.password", "DB_PASSWORD", "DB_PASS")
-	_ = s.BindEnv("database.ssl_mode", "DB_SSLMODE")
+	// Bind pool and retry environment variables (always used regardless of DB_URL)
 	_ = s.BindEnv("database.max_conns", "DB_MAX_CONNS")
 	_ = s.BindEnv("database.min_conns", "DB_MIN_CONNS")
 	_ = s.BindEnv("database.conn_max_lifetime", "DB_CONN_MAX_LIFETIME")
@@ -60,26 +136,50 @@ func DatabaseConfigFromViper(s *Standard) DatabaseConfig {
 	_ = s.BindEnv("database.retry_delay", "DB_RETRY_DELAY")
 	_ = s.BindEnv("database.health_check_period", "DB_HEALTH_CHECK_PERIOD")
 
-	config := DatabaseConfig{
-		Host:              s.GetString("database.host"),
-		Port:              s.GetInt("database.port"),
-		Database:          s.GetString("database.database"),
-		User:              s.GetString("database.user"),
-		Password:          s.GetString("database.password"),
-		SSLMode:           s.GetString("database.ssl_mode"),
-		MaxConns:          s.GetInt("database.max_conns"),
-		MinConns:          s.GetInt("database.min_conns"),
-		ConnMaxLifetime:   s.viper.GetDuration("database.conn_max_lifetime"),
-		ConnMaxIdleTime:   s.viper.GetDuration("database.conn_max_idle_time"),
-		RetryAttempts:     s.GetInt("database.retry_attempts"),
-		RetryDelay:        s.viper.GetDuration("database.retry_delay"),
-		HealthCheckPeriod: s.viper.GetDuration("database.health_check_period"),
+	var cfg DatabaseConfig
+
+	// Check for DB_URL first - it takes precedence over individual connection vars.
+	// If DB_URL is set but invalid, we fall back to individual env vars.
+	// Any configuration errors will be caught by Validate().
+	if dbURL := os.Getenv("DB_URL"); dbURL != "" {
+		parsed, err := ParseDatabaseURL(dbURL)
+		if err == nil {
+			cfg = *parsed
+		}
+		// Note: If parsing fails, we fall back to individual env vars below.
+		// This graceful degradation allows partially configured systems to work.
 	}
 
-	// Apply defaults
-	config.setDefaults()
+	// Use individual env vars if DB_URL was not set or failed to parse
+	if cfg.Host == "" {
+		_ = s.BindEnv("database.host", "DB_HOST")
+		_ = s.BindEnv("database.port", "DB_PORT")
+		_ = s.BindEnv("database.database", "DB_NAME")
+		_ = s.BindEnv("database.user", "DB_USER")
+		_ = s.BindEnv("database.password", "DB_PASSWORD")
+		_ = s.BindEnv("database.ssl_mode", "DB_SSLMODE")
 
-	return config
+		cfg.Host = s.GetString("database.host")
+		cfg.Port = s.GetInt("database.port")
+		cfg.Database = s.GetString("database.database")
+		cfg.User = s.GetString("database.user")
+		cfg.Password = s.GetString("database.password")
+		cfg.SSLMode = s.GetString("database.ssl_mode")
+	}
+
+	// Pool and retry settings always come from individual env vars
+	cfg.MaxConns = s.GetInt("database.max_conns")
+	cfg.MinConns = s.GetInt("database.min_conns")
+	cfg.ConnMaxLifetime = s.viper.GetDuration("database.conn_max_lifetime")
+	cfg.ConnMaxIdleTime = s.viper.GetDuration("database.conn_max_idle_time")
+	cfg.RetryAttempts = s.GetInt("database.retry_attempts")
+	cfg.RetryDelay = s.viper.GetDuration("database.retry_delay")
+	cfg.HealthCheckPeriod = s.viper.GetDuration("database.health_check_period")
+
+	// Apply defaults
+	cfg.setDefaults()
+
+	return cfg
 }
 
 // setDefaults sets default values for optional fields
