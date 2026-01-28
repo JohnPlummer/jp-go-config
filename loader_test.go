@@ -568,3 +568,468 @@ func TestDiscovery_EnvFileDoesNotOverrideExisting(t *testing.T) {
 		t.Errorf("NO_OVERRIDE_TEST = %q, want %q (should not be overridden)", got, "from_env")
 	}
 }
+
+// TestDiscovery_MonorepoScenario tests .env discovery when go.mod is in a subdirectory
+// but .env is at the git repository root. This is the key fix for ST-1098.
+func TestDiscovery_MonorepoScenario(t *testing.T) {
+	// Save original directory
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	t.Cleanup(func() {
+		os.Chdir(origDir)
+	})
+
+	// Create directory structure simulating monorepo:
+	// tmpDir/              (git root with .git and .env)
+	//   ├── .git/
+	//   ├── .env           (config file at repo root)
+	//   └── submodule/     (cwd - Go module root)
+	//       └── go.mod
+	tmpDir := t.TempDir()
+
+	// Create .git directory (simulates repo root)
+	gitDir := filepath.Join(tmpDir, ".git")
+	if err := os.Mkdir(gitDir, 0o750); err != nil {
+		t.Fatalf("failed to create .git dir: %v", err)
+	}
+
+	// Create .env at repo root
+	envContent := `MONOREPO_TEST_VAR=from_git_root
+`
+	envPath := filepath.Join(tmpDir, ".env")
+	if err := os.WriteFile(envPath, []byte(envContent), 0o644); err != nil {
+		t.Fatalf("failed to write .env file: %v", err)
+	}
+
+	// Create submodule directory with go.mod
+	submoduleDir := filepath.Join(tmpDir, "submodule")
+	if err := os.Mkdir(submoduleDir, 0o750); err != nil {
+		t.Fatalf("failed to create submodule dir: %v", err)
+	}
+	goModContent := `module example.com/submodule
+
+go 1.21
+`
+	goModPath := filepath.Join(submoduleDir, "go.mod")
+	if err := os.WriteFile(goModPath, []byte(goModContent), 0o644); err != nil {
+		t.Fatalf("failed to write go.mod file: %v", err)
+	}
+
+	// Save and restore env var
+	origVal := os.Getenv("MONOREPO_TEST_VAR")
+	t.Cleanup(func() {
+		if origVal != "" {
+			os.Setenv("MONOREPO_TEST_VAR", origVal)
+		} else {
+			os.Unsetenv("MONOREPO_TEST_VAR")
+		}
+	})
+	os.Unsetenv("MONOREPO_TEST_VAR")
+
+	// Change to submodule directory (simulates running from Go module)
+	if err := os.Chdir(submoduleDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	// Load should discover .env at git root even though go.mod is in submodule
+	_, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// Verify env var was loaded from git root
+	if got := os.Getenv("MONOREPO_TEST_VAR"); got != "from_git_root" {
+		t.Errorf("MONOREPO_TEST_VAR = %q, want %q (should find .env at git root)", got, "from_git_root")
+	}
+}
+
+// TestDiscovery_ConfigYamlInMonorepo tests config.yaml discovery in monorepo scenario.
+func TestDiscovery_ConfigYamlInMonorepo(t *testing.T) {
+	// Save original directory
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	t.Cleanup(func() {
+		os.Chdir(origDir)
+	})
+
+	// Create monorepo structure
+	tmpDir := t.TempDir()
+
+	// Create .git directory
+	gitDir := filepath.Join(tmpDir, ".git")
+	if err := os.Mkdir(gitDir, 0o750); err != nil {
+		t.Fatalf("failed to create .git dir: %v", err)
+	}
+
+	// Create config.yaml at repo root
+	configContent := `server:
+  host: monorepo_host
+  port: 9999
+`
+	configPath := filepath.Join(tmpDir, "config.yaml")
+	if err := os.WriteFile(configPath, []byte(configContent), 0o644); err != nil {
+		t.Fatalf("failed to write config.yaml file: %v", err)
+	}
+
+	// Create submodule directory with go.mod
+	submoduleDir := filepath.Join(tmpDir, "submodule")
+	if err := os.Mkdir(submoduleDir, 0o750); err != nil {
+		t.Fatalf("failed to create submodule dir: %v", err)
+	}
+	goModContent := `module example.com/submodule
+
+go 1.21
+`
+	goModPath := filepath.Join(submoduleDir, "go.mod")
+	if err := os.WriteFile(goModPath, []byte(goModContent), 0o644); err != nil {
+		t.Fatalf("failed to write go.mod file: %v", err)
+	}
+
+	// Change to submodule directory
+	if err := os.Chdir(submoduleDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	// Load should discover config.yaml at git root
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// Verify config was loaded from git root
+	srv, err := cfg.Server()
+	if err != nil {
+		t.Fatalf("Server() error = %v", err)
+	}
+	if srv.Host != "monorepo_host" {
+		t.Errorf("Server().Host = %q, want %q", srv.Host, "monorepo_host")
+	}
+	if srv.Port != 9999 {
+		t.Errorf("Server().Port = %d, want %d", srv.Port, 9999)
+	}
+}
+
+// TestDiscovery_StandardRepo tests discovery when go.mod and .git are in the same directory.
+func TestDiscovery_StandardRepo(t *testing.T) {
+	// Save original directory
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	t.Cleanup(func() {
+		os.Chdir(origDir)
+	})
+
+	// Create standard repo structure (go.mod and .git in same directory)
+	tmpDir := t.TempDir()
+
+	// Create .git directory
+	gitDir := filepath.Join(tmpDir, ".git")
+	if err := os.Mkdir(gitDir, 0o750); err != nil {
+		t.Fatalf("failed to create .git dir: %v", err)
+	}
+
+	// Create go.mod in same directory
+	goModContent := `module example.com/standard
+
+go 1.21
+`
+	goModPath := filepath.Join(tmpDir, "go.mod")
+	if err := os.WriteFile(goModPath, []byte(goModContent), 0o644); err != nil {
+		t.Fatalf("failed to write go.mod file: %v", err)
+	}
+
+	// Create .env
+	envContent := `STANDARD_REPO_VAR=standard_value
+`
+	envPath := filepath.Join(tmpDir, ".env")
+	if err := os.WriteFile(envPath, []byte(envContent), 0o644); err != nil {
+		t.Fatalf("failed to write .env file: %v", err)
+	}
+
+	// Save and restore env var
+	origVal := os.Getenv("STANDARD_REPO_VAR")
+	t.Cleanup(func() {
+		if origVal != "" {
+			os.Setenv("STANDARD_REPO_VAR", origVal)
+		} else {
+			os.Unsetenv("STANDARD_REPO_VAR")
+		}
+	})
+	os.Unsetenv("STANDARD_REPO_VAR")
+
+	// Change to repo directory
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	// Load should work normally
+	_, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// Verify env var was loaded
+	if got := os.Getenv("STANDARD_REPO_VAR"); got != "standard_value" {
+		t.Errorf("STANDARD_REPO_VAR = %q, want %q", got, "standard_value")
+	}
+}
+
+// TestDiscovery_GitWorktree tests discovery with git worktree (.git is a file, not directory).
+func TestDiscovery_GitWorktree(t *testing.T) {
+	// Save original directory
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	t.Cleanup(func() {
+		os.Chdir(origDir)
+	})
+
+	// Create worktree structure:
+	// tmpDir/
+	//   └── worktree/       (git worktree root)
+	//       ├── .git        (FILE, not directory - points to bare repo)
+	//       ├── .env
+	//       └── submodule/  (cwd)
+	//           └── go.mod
+	tmpDir := t.TempDir()
+
+	// Create worktree directory
+	worktreeDir := filepath.Join(tmpDir, "worktree")
+	if err := os.Mkdir(worktreeDir, 0o750); err != nil {
+		t.Fatalf("failed to create worktree dir: %v", err)
+	}
+
+	// Create .git as a FILE (how git worktrees work)
+	// Content points to the bare repo's git directory
+	gitFileContent := "gitdir: /some/bare/repo/.git/worktrees/main\n"
+	gitFilePath := filepath.Join(worktreeDir, ".git")
+	if err := os.WriteFile(gitFilePath, []byte(gitFileContent), 0o644); err != nil {
+		t.Fatalf("failed to write .git file: %v", err)
+	}
+
+	// Create .env at worktree root
+	envContent := `WORKTREE_TEST_VAR=from_worktree_root
+`
+	envPath := filepath.Join(worktreeDir, ".env")
+	if err := os.WriteFile(envPath, []byte(envContent), 0o644); err != nil {
+		t.Fatalf("failed to write .env file: %v", err)
+	}
+
+	// Create submodule directory with go.mod
+	submoduleDir := filepath.Join(worktreeDir, "submodule")
+	if err := os.Mkdir(submoduleDir, 0o750); err != nil {
+		t.Fatalf("failed to create submodule dir: %v", err)
+	}
+	goModContent := `module example.com/submodule
+
+go 1.21
+`
+	goModPath := filepath.Join(submoduleDir, "go.mod")
+	if err := os.WriteFile(goModPath, []byte(goModContent), 0o644); err != nil {
+		t.Fatalf("failed to write go.mod file: %v", err)
+	}
+
+	// Save and restore env var
+	origVal := os.Getenv("WORKTREE_TEST_VAR")
+	t.Cleanup(func() {
+		if origVal != "" {
+			os.Setenv("WORKTREE_TEST_VAR", origVal)
+		} else {
+			os.Unsetenv("WORKTREE_TEST_VAR")
+		}
+	})
+	os.Unsetenv("WORKTREE_TEST_VAR")
+
+	// Change to submodule directory
+	if err := os.Chdir(submoduleDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	// Load should discover .env at worktree root
+	// This works because os.Stat() detects .git as a file, not just directories
+	_, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// Verify env var was loaded from worktree root
+	if got := os.Getenv("WORKTREE_TEST_VAR"); got != "from_worktree_root" {
+		t.Errorf("WORKTREE_TEST_VAR = %q, want %q", got, "from_worktree_root")
+	}
+}
+
+// TestDiscovery_NoGitOnlyGoMod tests discovery when there's no .git (just a go module).
+func TestDiscovery_NoGitOnlyGoMod(t *testing.T) {
+	// Save original directory
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	t.Cleanup(func() {
+		os.Chdir(origDir)
+	})
+
+	// Create structure with go.mod but no .git
+	tmpDir := t.TempDir()
+
+	// Create go.mod
+	goModContent := `module example.com/no-git
+
+go 1.21
+`
+	goModPath := filepath.Join(tmpDir, "go.mod")
+	if err := os.WriteFile(goModPath, []byte(goModContent), 0o644); err != nil {
+		t.Fatalf("failed to write go.mod file: %v", err)
+	}
+
+	// Create .env
+	envContent := `NO_GIT_VAR=from_gomod_root
+`
+	envPath := filepath.Join(tmpDir, ".env")
+	if err := os.WriteFile(envPath, []byte(envContent), 0o644); err != nil {
+		t.Fatalf("failed to write .env file: %v", err)
+	}
+
+	// Create subdirectory
+	subDir := filepath.Join(tmpDir, "cmd")
+	if err := os.Mkdir(subDir, 0o750); err != nil {
+		t.Fatalf("failed to create cmd dir: %v", err)
+	}
+
+	// Save and restore env var
+	origVal := os.Getenv("NO_GIT_VAR")
+	t.Cleanup(func() {
+		if origVal != "" {
+			os.Setenv("NO_GIT_VAR", origVal)
+		} else {
+			os.Unsetenv("NO_GIT_VAR")
+		}
+	})
+	os.Unsetenv("NO_GIT_VAR")
+
+	// Change to subdirectory
+	if err := os.Chdir(subDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	// Load should find .env at go.mod root
+	_, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// Verify env var was loaded
+	if got := os.Getenv("NO_GIT_VAR"); got != "from_gomod_root" {
+		t.Errorf("NO_GIT_VAR = %q, want %q", got, "from_gomod_root")
+	}
+}
+
+// TestDiscovery_NoGoModOnlyGit tests discovery when there's no go.mod (just .git).
+func TestDiscovery_NoGoModOnlyGit(t *testing.T) {
+	// Save original directory
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	t.Cleanup(func() {
+		os.Chdir(origDir)
+	})
+
+	// Create structure with .git but no go.mod
+	tmpDir := t.TempDir()
+
+	// Create .git directory
+	gitDir := filepath.Join(tmpDir, ".git")
+	if err := os.Mkdir(gitDir, 0o750); err != nil {
+		t.Fatalf("failed to create .git dir: %v", err)
+	}
+
+	// Create .env
+	envContent := `NO_GOMOD_VAR=from_git_root
+`
+	envPath := filepath.Join(tmpDir, ".env")
+	if err := os.WriteFile(envPath, []byte(envContent), 0o644); err != nil {
+		t.Fatalf("failed to write .env file: %v", err)
+	}
+
+	// Create subdirectory
+	subDir := filepath.Join(tmpDir, "scripts")
+	if err := os.Mkdir(subDir, 0o750); err != nil {
+		t.Fatalf("failed to create scripts dir: %v", err)
+	}
+
+	// Save and restore env var
+	origVal := os.Getenv("NO_GOMOD_VAR")
+	t.Cleanup(func() {
+		if origVal != "" {
+			os.Setenv("NO_GOMOD_VAR", origVal)
+		} else {
+			os.Unsetenv("NO_GOMOD_VAR")
+		}
+	})
+	os.Unsetenv("NO_GOMOD_VAR")
+
+	// Change to subdirectory
+	if err := os.Chdir(subDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	// Load should find .env at git root
+	_, err = Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v", err)
+	}
+
+	// Verify env var was loaded
+	if got := os.Getenv("NO_GOMOD_VAR"); got != "from_git_root" {
+		t.Errorf("NO_GOMOD_VAR = %q, want %q", got, "from_git_root")
+	}
+}
+
+// TestCollectSearchPaths_Deduplication verifies search paths are deduplicated.
+func TestCollectSearchPaths_Deduplication(t *testing.T) {
+	// Save original directory
+	origDir, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd() error = %v", err)
+	}
+	t.Cleanup(func() {
+		os.Chdir(origDir)
+	})
+
+	// Create standard repo (go.mod and .git in same directory as cwd)
+	tmpDir := t.TempDir()
+
+	// Create .git directory
+	gitDir := filepath.Join(tmpDir, ".git")
+	if err := os.Mkdir(gitDir, 0o750); err != nil {
+		t.Fatalf("failed to create .git dir: %v", err)
+	}
+
+	// Create go.mod
+	goModContent := `module example.com/dedup
+
+go 1.21
+`
+	goModPath := filepath.Join(tmpDir, "go.mod")
+	if err := os.WriteFile(goModPath, []byte(goModContent), 0o644); err != nil {
+		t.Fatalf("failed to write go.mod file: %v", err)
+	}
+
+	// Change to repo directory (cwd == go.mod root == .git root)
+	if err := os.Chdir(tmpDir); err != nil {
+		t.Fatalf("Chdir() error = %v", err)
+	}
+
+	// collectSearchPaths should return only one path (deduplicated)
+	paths := collectSearchPaths()
+	if len(paths) != 1 {
+		t.Errorf("collectSearchPaths() returned %d paths, want 1 (should deduplicate)", len(paths))
+	}
+}

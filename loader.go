@@ -67,7 +67,11 @@ func WithLogger(logger *slog.Logger) LoadOption {
 //
 // Discovery order (first found wins):
 //  1. Current working directory
-//  2. Project root (directory containing go.mod or .git)
+//  2. Go module root (directory containing go.mod)
+//  3. Git repository root (directory containing .git)
+//
+// This supports monorepos and git worktrees where config files are at the
+// repository root but the Go module is in a subdirectory.
 //
 // Files loaded:
 //   - .env: Environment variables (does not override existing)
@@ -144,20 +148,10 @@ func discoverEnvFile(options *loadOptions) (string, error) {
 		return options.envPath, nil
 	}
 
-	// Auto-discover: check cwd first, then project root
-	searchPaths := []string{"."}
-
-	// Add project root if found
-	projectRoot := FindProjectRoot("go.mod")
-	if projectRoot == "" {
-		projectRoot = FindProjectRoot(".git")
-	}
-	if projectRoot != "" {
-		cwd, _ := os.Getwd()
-		if projectRoot != cwd {
-			searchPaths = append(searchPaths, projectRoot)
-		}
-	}
+	// Auto-discover: check cwd, go.mod root, then .git root
+	// This order supports monorepos and git worktrees where .env is at repo root
+	// but go.mod is in a subdirectory
+	searchPaths := collectSearchPaths()
 
 	// Search for .env file
 	for _, basePath := range searchPaths {
@@ -184,20 +178,10 @@ func discoverConfigFile(options *loadOptions) (string, error) {
 		return options.configPath, nil
 	}
 
-	// Auto-discover: check cwd first, then project root
-	searchPaths := []string{"."}
-
-	// Add project root if found
-	projectRoot := FindProjectRoot("go.mod")
-	if projectRoot == "" {
-		projectRoot = FindProjectRoot(".git")
-	}
-	if projectRoot != "" {
-		cwd, _ := os.Getwd()
-		if projectRoot != cwd {
-			searchPaths = append(searchPaths, projectRoot)
-		}
-	}
+	// Auto-discover: check cwd, go.mod root, then .git root
+	// This order supports monorepos and git worktrees where config is at repo root
+	// but go.mod is in a subdirectory
+	searchPaths := collectSearchPaths()
 
 	// Search for config files (yaml preferred, then yml)
 	configNames := []string{"config.yaml", "config.yml"}
@@ -212,6 +196,38 @@ func discoverConfigFile(options *loadOptions) (string, error) {
 
 	// No config file found - this is OK
 	return "", nil
+}
+
+// collectSearchPaths returns deduplicated search paths in priority order:
+// 1. Current working directory
+// 2. Go module root (directory containing go.mod)
+// 3. Git repository root (directory containing .git)
+//
+// This supports monorepos and git worktrees where config files are at the
+// repository root but go.mod is in a subdirectory.
+func collectSearchPaths() []string {
+	cwd, _ := os.Getwd()
+
+	// Start with cwd
+	searchPaths := []string{"."}
+	seen := map[string]bool{cwd: true}
+
+	// Add go.mod root if different from cwd
+	goModRoot := FindProjectRoot("go.mod")
+	if goModRoot != "" && !seen[goModRoot] {
+		searchPaths = append(searchPaths, goModRoot)
+		seen[goModRoot] = true
+	}
+
+	// Add .git root if different from both cwd and go.mod root
+	// This is the key fix: in monorepos/worktrees, .git root may be
+	// a parent of go.mod root, and that's where .env typically lives
+	gitRoot := FindProjectRoot(".git")
+	if gitRoot != "" && !seen[gitRoot] {
+		searchPaths = append(searchPaths, gitRoot)
+	}
+
+	return searchPaths
 }
 
 // Database returns the database configuration.
