@@ -51,7 +51,8 @@ Environment variables always win. The `.env` file does not override existing env
 `Load()` automatically discovers and loads configuration files from:
 
 1. Current working directory
-2. Project root (directory containing `go.mod` or `.git`)
+2. Go module root (directory containing `go.mod`)
+3. Git repository root (directory containing `.git`)
 
 Files discovered:
 
@@ -59,6 +60,31 @@ Files discovered:
 - `config.yaml` or `config.yml` - Configuration values
 
 No configuration files are required. Missing files are silently skipped.
+
+### Monorepo and Git Worktree Support
+
+The discovery order supports monorepos and git worktrees where configuration files are at the repository root but the Go module is in a subdirectory.
+
+Example monorepo structure:
+
+```
+/repo-root/
+  ├── .git/
+  ├── .env              # Found at step 3 (git root)
+  ├── config.yaml
+  └── services/
+      └── api/          # Your Go module
+          ├── go.mod
+          └── main.go   # cwd when running
+```
+
+When running from `services/api/`, the discovery searches:
+
+1. `services/api/` (cwd) - not found
+2. `services/api/` (go.mod root, same as cwd) - deduplicated
+3. `/repo-root/` (git root) - found!
+
+This also works with git worktrees where `.git` is a file pointing to the bare repository.
 
 ## Environment Variables
 
